@@ -39,6 +39,8 @@ export function App() {
     downloads,
     handleDataMessage,
     preCreateSink,
+    cancelPreCreatedSink,
+    cancelTransfersForPeer,
     acceptIncoming,
     rejectIncoming,
     clearDownload,
@@ -57,6 +59,10 @@ export function App() {
     }
   }, []);
 
+  const handlePeerDisconnect = useCallback((peerId) => {
+    cancelTransfersForPeer(peerId);
+  }, [cancelTransfersForPeer]);
+
   const { channelStates, getOpenChannels, networkFiles, requestFile } = usePeerConnections({
     socket,
     selfPeer,
@@ -64,21 +70,23 @@ export function App() {
     sharedFiles,
     onDataMessage: handleDataMessage,
     onEvent: handlePeerEvent,
+    onPeerDisconnect: handlePeerDisconnect,
   });
 
   const handleRequestFile = useCallback(
     async (fileId, ownerId, meta) => {
       setPeerError("");
-      const ok = await preCreateSink(fileId, meta);
+      const ok = await preCreateSink(fileId, meta, ownerId);
       if (ok) {
         try {
           requestFile(fileId, ownerId);
         } catch (err) {
           setPeerError(err.message);
+          cancelPreCreatedSink(fileId);
         }
       }
     },
-    [preCreateSink, requestFile]
+    [preCreateSink, requestFile, cancelPreCreatedSink]
   );
 
   useEffect(() => {

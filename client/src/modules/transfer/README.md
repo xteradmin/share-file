@@ -1,33 +1,30 @@
 # Transfer Module
 
-Owns file selection, incoming file acceptance, chunked sending, receiving, progress, cancel, resume, and completed download records.
+Owns file catalog registration, chunked sending and receiving, sequential transfer queues, disk-streaming file system sinks, auto-accept matching, and automatic cleanup of write handles on link loss.
 
 ## Features & UX Flows
 
-- **Multi-File Queue**: Supports choosing and staging multiple files to send. Files are transferred sequentially over the WebRTC DataChannel.
-- **Directory Download Mode (Save All / Accept All)**: When multiple files are received, the receiver can choose to "Save All". This opens a directory picker (`window.showDirectoryPicker()`) to accept and download the entire queue into a single directory without repeating prompts.
-- **Completed Downloads Actions**: Renders "Download All" and "Clear All" buttons to quickly download all buffered files or clear the list and revoke their blob URLs.
+- **Decentralized LAN Shared Catalog**: Connected LAN devices sync catalogs of staged files. Clicking "Download" on a file automatically handles the download on-demand from the peer.
+- **One-Click Direct Downloads**: Clicking "Download" on the LAN catalog immediately triggers the user save dialog (if supported), saves the resulting stream write sink, and sends the request. When the peer replies with the matching catalog file ID, the receiver auto-accepts and streams the bytes directly, bypassing any secondary "Accept/Save" prompts.
+- **Auto-Download Memory Transfers**: For browsers without File System Access API support (which buffer chunks in an in-memory ArrayBuffer), once the transfer finishes, the application programmatically triggers a browser download on the blob URL. The user only clicks "Download" once.
+- **Centered Modal Overlay**: When a sender pushes files directly (using the Send button), the receiver is prompted with a centered, backdrop-blurred modal dialog. This eliminates scrolling up to accept or reject pushed transfers.
+- **Crash Safety Memory Warnings**: Warns users on mobile/Safari browsers if they attempt to download files larger than 150MB in memory, prompting them to switch to a browser that supports File System Access (e.g., Chrome, Edge).
+- **.crswap Swap File Protection**:
+  - Monitors the active WebRTC data channel for `close` and `error` events. If the channel drops mid-transfer, it immediately aborts the active stream to delete the temporary `.crswap` file.
+  - Automatically aborts and deletes pre-created write streams if a peer goes offline or signaling disconnects.
+  - If a file request fails to send over WebRTC, the pre-created sink is immediately aborted and cleaned up.
 
 ## Entry Points
 
-- `FileTransferPanel.jsx` renders the Transfer panel controls, selected files list, progress, and completed downloads.
-- `transferProtocol.js` defines DataChannel control messages, deterministic file IDs, and chunk sending with backpressure.
-- `useIncomingTransfers.js` manages incoming files, directory-writing sinks, and in-memory fallbacks.
+- `FileTransferPanel.jsx` renders the single-column Transfer panel, LAN status badges, staging controls, centered overlay modal, network catalog, and completed list.
+- `transferProtocol.js` defines WebRTC data channel control messages, sequential queue transmissions, and chunk sending with native backpressure flow control (with 10ms polling fallbacks for throttled background tabs).
+- `useIncomingTransfers.js` manages incoming file streams, pre-created writable file sinks, directory pickers for "Save All" queues, auto-accept logic, and event-driven cleanup handles.
 
-## Protocol
+## Protocol Messages
 
-Control messages are JSON strings with a `type` field. File bytes are sent as ordered binary `ArrayBuffer` chunks over the same reliable `RTCDataChannel`.
-
-Important message types:
-- `file-meta` announces file metadata, deterministic file ID, as well as `queueIndex` and `queueSize` for sequential transfer management.
+- `file-meta` announces file metadata, catalog file ID, as well as `queueIndex` and `queueSize` for sequential transfer queues.
 - `file-resume` tells the sender which byte offset the receiver already has.
 - `file-done` closes a successful transfer.
 - `file-cancel` stops an in-progress transfer.
-
-## Memory Behavior
-
-When `showSaveFilePicker()` or `showDirectoryPicker()` is available, the receiver writes each chunk directly to the selected file stream and does not allocate the full file in memory. Browsers without File System Access support fall back to one in-memory buffer after the user accepts the incoming file.
-
-## AI Context
-
-Keep this module independent from signaling transport. Folder queues, checksums, and stronger persistent receiver-side resume should be added here without changing peer discovery or signaling modules.
+- `file-request` (sent over data channel) requests a file by its catalog ID.
+- `catalog-share` (sent over data channel) synchronizes the array of shared files with the peer.

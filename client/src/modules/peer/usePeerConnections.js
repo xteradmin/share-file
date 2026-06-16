@@ -9,6 +9,7 @@ export function usePeerConnections({
   sharedFiles,
   onDataMessage,
   onEvent,
+  onPeerDisconnect,
 }) {
   const connectionsRef = useRef(new Map());
   const retryCountsRef = useRef(new Map());
@@ -19,11 +20,13 @@ export function usePeerConnections({
   const removePeerFiles = useCallback((peerId) => {
     setNetworkFiles((prev) => {
       const next = new Map(prev);
+      const keysToDelete = [];
       for (const [fileId, file] of next.entries()) {
         if (file.ownerId === peerId) {
-          next.delete(fileId);
+          keysToDelete.push(fileId);
         }
       }
+      keysToDelete.forEach((key) => next.delete(key));
       return next;
     });
   }, []);
@@ -75,12 +78,14 @@ export function usePeerConnections({
             if (message.type === "catalog-share") {
               setNetworkFiles((prev) => {
                 const next = new Map(prev);
-                // Clear old files from this peer
+                // Clear old files from this peer safely without mutating during iteration
+                const keysToDelete = [];
                 for (const [fileId, file] of next.entries()) {
                   if (file.ownerId === peerId) {
-                    next.delete(fileId);
+                    keysToDelete.push(fileId);
                   }
                 }
+                keysToDelete.forEach((key) => next.delete(key));
                 // Add new shared files
                 (message.files || []).forEach((f) => {
                   next.set(f.id, {
@@ -104,6 +109,7 @@ export function usePeerConnections({
                 sendFile({
                   channel: nextChannel,
                   file: fileRecord.fileOrBlob,
+                  id: fileRecord.id,
                   onProgress: () => {}, // Silent background updates
                 }).catch((err) => {
                   onEvent?.(`Background send failed for ${fileRecord.name}: ${err.message}`);
@@ -117,7 +123,7 @@ export function usePeerConnections({
             // Ignore JSON parse errors, relay message normally
           }
         }
-        onDataMessage?.(event.data, nextChannel);
+        onDataMessage?.(event.data, nextChannel, peerId);
       };
     },
     [onDataMessage, onEvent, sharedFiles, removePeerFiles]
@@ -158,6 +164,7 @@ export function usePeerConnections({
         record.pc.close();
         connectionsRef.current.delete(peerId);
         removePeerFiles(peerId);
+        onPeerDisconnect?.(peerId);
       }
 
       setChannelStates((prev) => ({ ...prev, [peerId]: "connecting" }));
@@ -276,9 +283,10 @@ export function usePeerConnections({
   useEffect(() => {
     if (!socket || !selfPeer) {
       // Clean up all active connections if signaling drops offline
-      for (const record of connectionsRef.current.values()) {
+      for (const [peerId, record] of connectionsRef.current.entries()) {
         record.channel?.close();
         record.pc.close();
+        onPeerDisconnect?.(peerId);
       }
       connectionsRef.current.clear();
       setChannelStates({});
@@ -303,6 +311,7 @@ export function usePeerConnections({
           delete next[peerId];
           return next;
         });
+        onPeerDisconnect?.(peerId);
       }
     }
 

@@ -7,12 +7,12 @@ export function createFileId(file) {
 }
 
 // ── Send a file (with background + resume) ──────────────────────────
-export async function sendFile({ channel, file, signal, onProgress, queueIndex, queueSize }) {
+export async function sendFile({ channel, file, id: customId, signal, onProgress, queueIndex, queueSize }) {
   if (!channel || channel.readyState !== "open") {
     throw new Error("Data channel is not open.");
   }
 
-  const id = createFileId(file);
+  const id = customId || createFileId(file);
   const resumeOffsetPromise = waitForResumeOffset(channel, id, file.size, signal);
 
   channel.send(JSON.stringify({

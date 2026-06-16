@@ -389,12 +389,14 @@ export function FileTransferPanel({
       ) : null}
 
       {incoming?.status === "waiting" ? (
-        <IncomingRequest
-          incoming={incoming}
-          accepting={acceptingIncoming}
-          onAccept={acceptIncoming}
-          onReject={rejectIncoming}
-        />
+        <div className="modal-overlay">
+          <IncomingRequest
+            incoming={incoming}
+            accepting={acceptingIncoming}
+            onAccept={acceptIncoming}
+            onReject={rejectIncoming}
+          />
+        </div>
       ) : null}
 
       {incoming && incoming.status !== "waiting" ? (

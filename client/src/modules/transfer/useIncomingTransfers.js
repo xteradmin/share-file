@@ -19,6 +19,7 @@ export function useIncomingTransfers(onShareFile) {
     }
 
     active.failed = true;
+    active.cleanupChannelEvents?.();
     active.sink.abort?.();
     partialTransfersRef.current.delete(active.id);
 
@@ -54,7 +55,19 @@ export function useIncomingTransfers(onShareFile) {
           throw new Error("Transfer ended before all bytes were received.");
         }
 
+        active.cleanupChannelEvents?.();
         const result = await active.sink.close();
+
+        // Automatically trigger browser download for in-memory transfers
+        if (result?.url) {
+          const a = document.createElement("a");
+          a.href = result.url;
+          a.download = active.meta.name;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+
         setDownloads((current) => [
           {
             id: active.meta.id,
@@ -103,7 +116,8 @@ export function useIncomingTransfers(onShareFile) {
     } else {
       let sink;
       if (preCreatedSinksRef.current.has(pending.meta.id)) {
-        sink = preCreatedSinksRef.current.get(pending.meta.id);
+        const entry = preCreatedSinksRef.current.get(pending.meta.id);
+        sink = entry.sink;
         preCreatedSinksRef.current.delete(pending.meta.id);
       } else if (directoryHandleRef.current) {
         sink = await createDirectorySink(directoryHandleRef.current, pending.meta);
@@ -124,19 +138,39 @@ export function useIncomingTransfers(onShareFile) {
       };
     }
 
+    // Clean up any existing listeners on the channel before assigning new ones
+    active.cleanupChannelEvents?.();
+
     active.meta = pending.meta;
     active.channel = pending.channel;
+    active.peerId = pending.peerId;
     active.failed = false;
+
+    const handleChannelCloseOrError = () => {
+      if (activeRef.current?.id === active.id) {
+        failActiveTransfer(active, "Data channel closed unexpectedly.");
+      }
+    };
+    active.channel.addEventListener("close", handleChannelCloseOrError);
+    active.channel.addEventListener("error", handleChannelCloseOrError);
+
+    active.cleanupChannelEvents = () => {
+      try {
+        active.channel.removeEventListener("close", handleChannelCloseOrError);
+        active.channel.removeEventListener("error", handleChannelCloseOrError);
+      } catch {}
+    };
+
     activeRef.current = active;
     partialTransfersRef.current.set(active.id, active);
     pendingRef.current = null;
     lastUpdateRef.current = performance.now();
     setIncoming(toIncomingState(active, "receiving"));
     sendResumeOffset(active.channel, active.id, active.receivedBytes);
-  }, []);
+  }, [failActiveTransfer]);
 
   const handleDataMessage = useCallback(
-    (data, channel) => {
+    (data, channel, peerId) => {
       if (typeof data === "string") {
         const message = parseControlMessage(data);
         if (!message) {
@@ -145,12 +179,13 @@ export function useIncomingTransfers(onShareFile) {
 
         if (message.type === "file-meta") {
           const existing = partialTransfersRef.current.get(message.id);
-          const pending = { meta: message, channel };
+          const pending = { meta: message, channel, peerId };
           pendingRef.current = pending;
 
           if (existing?.meta.size === message.size) {
             existing.meta = message;
             existing.channel = channel;
+            existing.peerId = peerId;
             activeRef.current = existing;
             setIncoming(toIncomingState(existing, "receiving"));
             sendResumeOffset(channel, message.id, existing.receivedBytes);
@@ -230,7 +265,7 @@ export function useIncomingTransfers(onShareFile) {
     [failActiveTransfer, finishActiveTransfer, performAccept],
   );
 
-  const preCreateSink = useCallback(async (fileId, meta) => {
+  const preCreateSink = useCallback(async (fileId, meta, ownerId) => {
     let sink;
     if (canStreamToDisk()) {
       try {
@@ -263,7 +298,7 @@ export function useIncomingTransfers(onShareFile) {
       sink = createMemorySink(meta);
     }
 
-    preCreatedSinksRef.current.set(fileId, sink);
+    preCreatedSinksRef.current.set(fileId, { sink, ownerId });
     return true;
   }, []);
 
@@ -299,12 +334,14 @@ export function useIncomingTransfers(onShareFile) {
     }
 
     if (active) {
+      active.cleanupChannelEvents?.();
       active.sink.abort?.();
       partialTransfersRef.current.delete(active.id);
     }
 
     if (id && preCreatedSinksRef.current.has(id)) {
-      preCreatedSinksRef.current.get(id).abort?.();
+      const entry = preCreatedSinksRef.current.get(id);
+      entry.sink.abort?.();
       preCreatedSinksRef.current.delete(id);
     }
 
@@ -312,6 +349,34 @@ export function useIncomingTransfers(onShareFile) {
     activeRef.current = null;
     setIncoming(null);
   }, []);
+
+  const cancelPreCreatedSink = useCallback((fileId) => {
+    if (preCreatedSinksRef.current.has(fileId)) {
+      const entry = preCreatedSinksRef.current.get(fileId);
+      entry.sink.abort?.();
+      preCreatedSinksRef.current.delete(fileId);
+    }
+  }, []);
+
+  const cancelTransfersForPeer = useCallback((peerId) => {
+    // 1. Clean up active transfer if it belongs to this peer
+    const active = activeRef.current;
+    if (active && active.peerId === peerId) {
+      failActiveTransfer(active, "Peer disconnected.");
+    }
+
+    // 2. Clean up pre-created sinks belonging to this peer safely without mutating during iteration
+    const keysToDelete = [];
+    for (const [fileId, entry] of preCreatedSinksRef.current.entries()) {
+      if (entry.ownerId === peerId) {
+        entry.sink.abort?.();
+        keysToDelete.push(fileId);
+      }
+    }
+    keysToDelete.forEach((fileId) => {
+      preCreatedSinksRef.current.delete(fileId);
+    });
+  }, [failActiveTransfer]);
 
   const clearDownload = useCallback((id) => {
     setDownloads((current) => {
@@ -335,6 +400,8 @@ export function useIncomingTransfers(onShareFile) {
     downloads,
     handleDataMessage,
     preCreateSink,
+    cancelPreCreatedSink,
+    cancelTransfersForPeer,
     acceptIncoming,
     rejectIncoming,
     clearDownload,

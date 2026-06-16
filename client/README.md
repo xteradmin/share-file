@@ -1,15 +1,22 @@
 # Client
 
-React + Vite app for showing LAN users, connecting two browsers, and moving files through a WebRTC DataChannel.
+React + Vite app for automatic multi-peer LAN auto-pairing, decentralized file catalog sharing, and peer-to-peer file transfers using WebRTC DataChannels.
 
-The first screen is the actual transfer app: a Users panel and a Transfer panel. Room codes, activity logs, and device/peer metric rails are intentionally not part of the current UI.
+The interface is streamlined into a single-column Transfer panel that displays:
+- Active LAN device status badges and their live WebRTC states.
+- Interrupted transfers with options to Resume or Dismiss.
+- Standard file picker to stage files and broadcast them to the LAN.
+- Centered, backdrop-blurred modal prompts for accepting incoming pushed transfers.
+- **Files Available on LAN** catalog list with one-click direct download actions.
+- **Completed Downloads** list with status indicators.
 
-Feature modules live in `src/modules/`. Each module owns its UI, hooks, protocol helpers, and a local `README.md` so future AI agents can load only the relevant module summary before editing.
+Feature modules live in `src/modules/`. Each module owns its UI, hooks, and local summaries.
 
 ## Runtime Flow
 
-1. `useSignalingSocket()` connects to the server and buffers early events until listeners exist.
+1. `useSignalingSocket()` connects to the server and buffers early socket events.
 2. `App.jsx` announces the local random username/device name.
-3. `PairingCard.jsx` displays visible LAN users and handles click-to-connect.
-4. `usePeerConnection()` registers signaling listeners, exposes `signalingReady`, negotiates WebRTC, and exposes the DataChannel state.
-5. `FileTransferPanel.jsx` enables sending only when the DataChannel is open.
+3. `usePeerConnections()` (plural) establishes automatic WebRTC handshakes with all discovered LAN users. It resolves offer collisions (glare) deterministically using lexicographical client ID sorting.
+4. Once connected, peers synchronize their shared file catalogs via data channel control messages.
+5. `FileTransferPanel.jsx` allows users to select files to stage/share, and request files from the LAN catalog.
+6. The transfer module handles sequential chunk transmission, backpressure flow controls, disk-streaming file system sinks, and automatic cleanup of write handles on peer disconnection.
