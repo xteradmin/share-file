@@ -9,9 +9,8 @@ Owns browser-to-browser WebRTC setup.
 
 ## Protocol Boundary
 
-This module moves signaling envelopes only. It does not know room storage internals or file-transfer message schemas beyond forwarding received DataChannel messages to the transfer module.
+This module moves signaling envelopes only. It does not know peer-directory internals or file-transfer message schemas beyond forwarding received DataChannel messages to the transfer module.
 
 ## AI Context
 
 For TURN relay, update `peerConfig.js`. For connection diagnostics, add `getStats()` polling here and expose selected candidate-pair type to the status module.
-

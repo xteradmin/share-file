@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Browser-based local file transfer via WebRTC DataChannels. Signaling server coordinates room pairing; file bytes move peer-to-peer.
+Browser-based local file transfer via WebRTC DataChannels. Signaling server coordinates LAN peer discovery and WebRTC setup; file bytes move peer-to-peer.
 
 ## Commands
 
@@ -22,9 +22,9 @@ npm start          # runs signaling server (production)
 ```
 client/                  React + Vite app
   src/
-    App.jsx              Root component, room/signaling orchestration
+    App.jsx              Root component, LAN peer/signaling orchestration
     modules/
-      pairing/           Room create/join UI
+      pairing/           LAN user list and connect UI
       peer/              WebRTC peer connection (usePeerConnection hook)
       signaling/         WebSocket client (useSignalingSocket hook)
       status/            Connection status display
@@ -33,7 +33,7 @@ server/                  Express + ws signaling server
   src/
     socketGateway.js     WebSocket server, message routing
     modules/
-      rooms/             Room state (in-memory Map)
+      peers/             LAN peer directory and connect requests
       signaling/         ICE/offer/answer relay
       health/            Health check endpoint
     shared/config.js     Port, CORS config
@@ -61,13 +61,12 @@ Sender saves `{ name, size, mimeType, lastSentOffset }` to `localStorage` every 
 ### Signaling (WebSocket)
 
 - Message format: `{ event, payload, requestId? }`
-- `room:create` / `room:join` / `room:ready` / `room:leave` — room management
+- `peer:announce` / `peer:list` / `peer:connect` / `peer:accept` / `peer:disconnect` - LAN user discovery and pairing
 - `signal:send` / `signal:receive` — WebRTC offer/answer/ICE relay
-- `room:peer-joined` / `room:peer-ready` / `room:peer-left` — server broadcasts
 
-### Room Constraints
+### Peer Constraints
 
-- 6-char alphanumeric code, max 2 peers, no TURN (direct connections only)
+- Random device name per browser, one active peer per client, no TURN (direct connections only)
 
 ### LAN Access
 

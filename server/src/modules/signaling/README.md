@@ -8,7 +8,7 @@ Routes opaque WebRTC signaling payloads between connected clients.
 
 ## Socket Events
 
-- Client sends `signal:send` with `{ roomCode, targetId, payload }`.
+- Client sends `signal:send` with `{ targetId, payload }`.
 - Server forwards `{ from, payload }` to `targetId`.
 
 ## AI Context

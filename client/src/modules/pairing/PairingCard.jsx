@@ -1,102 +1,101 @@
-import { useState } from "react";
-import { Clipboard, DoorOpen, LogIn, Plus } from "lucide-react";
+import { PlugZap, Unplug, UserRound, UsersRound } from "lucide-react";
 
 export function PairingCard({
-  room,
-  roomUrl,
-  remotePeerId,
+  selfPeer,
+  deviceName,
+  peers,
+  connectedPeer,
+  connectingPeerId,
   error,
   disabled,
-  onCreateRoom,
-  onJoinRoom,
-  onLeaveRoom,
+  onConnectPeer,
+  onDisconnectPeer,
 }) {
-  const [joinCode, setJoinCode] = useState("");
-  const [copied, setCopied] = useState(false);
-
-  const submitJoin = (event) => {
-    event.preventDefault();
-    const cleaned = joinCode.trim().toUpperCase();
-    if (cleaned) {
-      onJoinRoom(cleaned);
-    }
-  };
-
-  const copyRoomUrl = async () => {
-    if (!roomUrl || !navigator.clipboard) {
-      return;
-    }
-
-    await navigator.clipboard.writeText(roomUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
-  };
-
   return (
-    <section className="panel" aria-label="Room pairing">
+    <section className="panel" aria-label="LAN users">
       <div className="panel-header">
         <div className="panel-title">
-          <LogIn size={19} aria-hidden="true" />
-          <h2>Pairing</h2>
+          <UsersRound size={19} aria-hidden="true" />
+          <h2>LAN users</h2>
+        </div>
+        <span className={`status-pill ${disabled ? "warning" : "ready"}`}>
+          <span className="status-dot" />
+          {disabled ? "offline" : "online"}
+        </span>
+      </div>
+
+      <div className="device-card">
+        <div className="device-avatar" aria-hidden="true">
+          <UserRound size={18} />
+        </div>
+        <div>
+          <strong>{selfPeer?.displayName || deviceName}</strong>
+          <span>This device</span>
         </div>
       </div>
 
-      {room ? (
-        <>
-          <div className="room-code">
-            <span>Room code</span>
-            <code>{room.roomCode}</code>
+      {connectedPeer ? (
+        <div className="connected-peer">
+          <div className="download-row">
+            <strong>{connectedPeer.displayName}</strong>
+            <span>Connected</span>
           </div>
+          <button className="button secondary" type="button" onClick={onDisconnectPeer}>
+            <Unplug size={17} aria-hidden="true" />
+            Disconnect
+          </button>
+        </div>
+      ) : null}
 
-          <div className="button-row">
-            <button className="button secondary" type="button" onClick={copyRoomUrl}>
-              <Clipboard size={17} aria-hidden="true" />
-              {copied ? "Copied" : "Copy link"}
-            </button>
-            <button className="button danger" type="button" onClick={onLeaveRoom}>
-              <DoorOpen size={17} aria-hidden="true" />
-              Leave
-            </button>
+      <div className="peer-list" aria-label="Available users">
+        {peers.length === 0 ? (
+          <div className="empty-state">
+            <UsersRound size={18} aria-hidden="true" />
+            <span>No other users online.</span>
           </div>
-
-          <div className="transfer-stack">
-            <div className="status-row">
-              <span>Local role</span>
-              <strong>{room.role}</strong>
-            </div>
-            <div className="status-row">
-              <span>Peer</span>
-              <strong>{remotePeerId ? "Connected to room" : "Waiting"}</strong>
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="button-row">
-            <button className="button" type="button" disabled={disabled} onClick={onCreateRoom}>
-              <Plus size={17} aria-hidden="true" />
-              Create room
-            </button>
-          </div>
-
-          <form className="join-form" onSubmit={submitJoin}>
-            <input
-              type="text"
-              value={joinCode}
-              placeholder="Room code"
-              autoComplete="off"
-              onChange={(event) => setJoinCode(event.target.value)}
+        ) : (
+          peers.map((peer) => (
+            <PeerRow
+              key={peer.id}
+              peer={peer}
+              disabled={disabled || Boolean(connectedPeer && connectedPeer.id !== peer.id)}
+              connecting={connectingPeerId === peer.id}
+              connected={connectedPeer?.id === peer.id || peer.connectedToSelf}
+              onConnect={() => onConnectPeer(peer)}
             />
-            <button className="button secondary" type="submit" disabled={disabled}>
-              <LogIn size={17} aria-hidden="true" />
-              Join
-            </button>
-          </form>
-        </>
-      )}
+          ))
+        )}
+      </div>
 
       {error ? <p className="error">{error}</p> : null}
     </section>
   );
 }
 
+function PeerRow({ peer, disabled, connecting, connected, onConnect }) {
+  const busy = peer.connected && !connected;
+  const actionLabel = connected ? "Connected" : connecting ? "Connecting" : "Connect";
+
+  return (
+    <div className="peer-row">
+      <div className="peer-main">
+        <div className="device-avatar" aria-hidden="true">
+          <UserRound size={18} />
+        </div>
+        <div>
+          <strong>{peer.displayName}</strong>
+          <span>{busy ? "Busy" : connected ? "Connected" : "Available"}</span>
+        </div>
+      </div>
+      <button
+        className="button"
+        type="button"
+        disabled={disabled || busy || connected || connecting}
+        onClick={onConnect}
+      >
+        <PlugZap size={17} aria-hidden="true" />
+        {actionLabel}
+      </button>
+    </div>
+  );
+}

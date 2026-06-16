@@ -8,5 +8,4 @@ Exposes simple operational endpoints.
 
 ## AI Context
 
-Keep health checks lightweight. Do not add room internals or socket state unless deployment monitoring needs it.
-
+Keep health checks lightweight. Do not add peer internals or socket state unless deployment monitoring needs it.

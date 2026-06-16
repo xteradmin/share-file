@@ -1,17 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
-import { handleRoomMessage } from "./modules/rooms/roomHandlers.js";
-import { RoomStore } from "./modules/rooms/roomStore.js";
+import { handlePeerMessage } from "./modules/peers/peerHandlers.js";
 import { handleSignalMessage } from "./modules/signaling/signalingHandlers.js";
 
-const roomStore = new RoomStore();
 const clients = new Map();
 
 export function registerSocketGateway(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
   wss.on("connection", (ws) => {
-    const client = { id: randomUUID(), ws };
+    const client = {
+      id: randomUUID(),
+      ws,
+      displayName: "LAN device",
+      connectedPeerId: "",
+    };
     clients.set(client.id, client);
 
     ws.on("message", (rawMessage) => {
@@ -23,13 +26,16 @@ export function registerSocketGateway(httpServer) {
       const context = {
         client,
         clients,
-        roomStore,
         reply: (payload) => reply(client, message.requestId, payload),
         sendEvent,
+        serializePeer: (peer) => serializePeer(peer, client.id),
+        broadcastPeerLists,
+        connectPeers,
+        clearPeerConnection,
       };
 
-      if (message.event.startsWith("room:")) {
-        handleRoomMessage(context, message.event, message.payload);
+      if (message.event.startsWith("peer:")) {
+        handlePeerMessage(context, message.event, message.payload);
         return;
       }
 
@@ -39,11 +45,9 @@ export function registerSocketGateway(httpServer) {
     });
 
     ws.on("close", () => {
-      const roomCode = roomStore.leave(client.id);
+      clearPeerConnection(client.id);
       clients.delete(client.id);
-      if (roomCode) {
-        broadcastToRoom(roomCode, client.id, "room:peer-left", { peerId: client.id });
-      }
+      broadcastPeerLists();
     });
   });
 }
@@ -77,8 +81,52 @@ function sendEvent(clientId, event, payload) {
   target.ws.send(JSON.stringify({ event, payload }));
 }
 
-function broadcastToRoom(roomCode, exceptClientId, event, payload) {
-  for (const peerId of roomStore.getPeers(roomCode, exceptClientId)) {
-    sendEvent(peerId, event, payload);
+function connectPeers(firstId, secondId) {
+  const first = clients.get(firstId);
+  const second = clients.get(secondId);
+  if (!first || !second) {
+    return;
   }
+
+  clearPeerConnection(first.id);
+  clearPeerConnection(second.id);
+
+  first.connectedPeerId = second.id;
+  second.connectedPeerId = first.id;
+  broadcastPeerLists();
+}
+
+function clearPeerConnection(clientId) {
+  const client = clients.get(clientId);
+  const peerId = client?.connectedPeerId;
+  if (!client || !peerId) {
+    return;
+  }
+
+  client.connectedPeerId = "";
+  const peer = clients.get(peerId);
+  if (peer?.connectedPeerId === clientId) {
+    peer.connectedPeerId = "";
+    sendEvent(peer.id, "peer:disconnect", { peerId: clientId });
+  }
+}
+
+function broadcastPeerLists() {
+  for (const client of clients.values()) {
+    sendEvent(client.id, "peer:list", {
+      self: serializePeer(client, client.id),
+      peers: [...clients.values()]
+        .filter((peer) => peer.id !== client.id)
+        .map((peer) => serializePeer(peer, client.id)),
+    });
+  }
+}
+
+function serializePeer(peer, viewerId = "") {
+  return {
+    id: peer.id,
+    displayName: peer.displayName || "LAN device",
+    connected: Boolean(peer.connectedPeerId),
+    connectedToSelf: Boolean(viewerId && peer.connectedPeerId === viewerId),
+  };
 }

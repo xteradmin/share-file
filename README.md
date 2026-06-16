@@ -1,6 +1,6 @@
 # Share File
 
-Browser-based local file transfer using WebRTC DataChannels. Signaling server coordinates room pairing only; file bytes move peer-to-peer.
+Browser-based local file transfer using WebRTC DataChannels. The signaling server shows LAN users and coordinates peer setup only; file bytes move peer-to-peer.
 
 ## Commands
 
@@ -22,10 +22,10 @@ npm start          # runs signaling server (production)
 
 ## How It Works
 
-1. User creates a room → gets a 6-char code
-2. Second user joins with the code → signaling server pairs them
-3. WebRTC DataChannel established → file bytes transfer peer-to-peer
-4. Transfers support background tabs (reduced speed) and resume after page reload
+1. Each browser gets a random device name and announces itself to the signaling server
+2. Users on the same LAN appear in the user list
+3. Clicking a user starts WebRTC negotiation and opens a DataChannel
+4. File bytes transfer peer-to-peer; transfers support background tabs and resume
 
 ## Environment
 

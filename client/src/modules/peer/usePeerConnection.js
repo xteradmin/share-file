@@ -3,7 +3,6 @@ import { DATA_CHANNEL_LABEL, peerConnectionConfig } from "./peerConfig.js";
 
 export function usePeerConnection({
   socket,
-  roomCode,
   remotePeerId,
   isInitiator,
   onDataMessage,
@@ -31,21 +30,20 @@ export function usePeerConnection({
 
   const sendSignal = useCallback(
     (payload) => {
-      if (!socket || !roomCode || !remotePeerId) {
+      if (!socket || !remotePeerId) {
         return;
       }
 
       socket.emit("signal:send", {
-        roomCode,
         targetId: remotePeerId,
         payload,
       });
     },
-    [remotePeerId, roomCode, socket],
+    [remotePeerId, socket],
   );
 
   useEffect(() => {
-    if (!socket || !roomCode || !remotePeerId) {
+    if (!socket || !remotePeerId) {
       cleanup();
       return undefined;
     }
@@ -153,7 +151,7 @@ export function usePeerConnection({
         pcRef.current = null;
       }
     };
-  }, [cleanup, isInitiator, onDataMessage, onEvent, remotePeerId, roomCode, sendSignal, socket]);
+  }, [cleanup, isInitiator, onDataMessage, onEvent, remotePeerId, sendSignal, socket]);
 
   return {
     channel,
@@ -163,4 +161,3 @@ export function usePeerConnection({
     resetPeer: cleanup,
   };
 }
-

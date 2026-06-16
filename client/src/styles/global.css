@@ -111,8 +111,6 @@ h2 {
   gap: 8px;
 }
 
-.status-row,
-.room-code,
 .download-row,
 .transfer-row {
   display: flex;
@@ -121,16 +119,6 @@ h2 {
   gap: 12px;
 }
 
-.status-row {
-  padding: 11px 0;
-  border-top: 1px solid #eef1ec;
-}
-
-.status-row:first-of-type {
-  border-top: 0;
-}
-
-.status-row span,
 .metric span,
 .download-row span,
 .transfer-row span {
@@ -138,37 +126,80 @@ h2 {
   font-size: 0.88rem;
 }
 
-.status-row strong,
 .metric strong {
   overflow-wrap: anywhere;
   color: #17201b;
 }
 
-.room-code {
-  margin: 16px 0;
-  padding: 14px;
-  background: #f3f7ef;
-  border: 1px solid #dbe8d2;
+.device-card,
+.connected-peer,
+.peer-row {
+  padding: 12px;
+  background: #fbfcfa;
+  border: 1px solid #e4e9e1;
   border-radius: 8px;
 }
 
-.room-code code {
-  font-size: 1.8rem;
-  font-weight: 800;
-  letter-spacing: 0;
+.device-card,
+.peer-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
-.join-form,
+.device-card strong,
+.peer-main strong,
+.connected-peer strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.device-card span,
+.peer-main span {
+  display: block;
+  margin-top: 2px;
+  color: #647268;
+  font-size: 0.86rem;
+}
+
+.device-avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: #1b5f46;
+  background: #e8eee5;
+  border-radius: 999px;
+}
+
+.connected-peer {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.peer-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.peer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .file-picker {
   display: grid;
   gap: 10px;
 }
 
-.join-form {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-input[type="text"],
 input[type="file"] {
   width: 100%;
   min-height: 42px;
@@ -177,9 +208,6 @@ input[type="file"] {
   background: #fbfcfa;
   border: 1px solid #cbd5ca;
   border-radius: 8px;
-}
-
-input[type="file"] {
   cursor: pointer;
 }
 
@@ -237,14 +265,6 @@ input[type="file"] {
   font-weight: 700;
 }
 
-.button.danger {
-  background: #a33d2b;
-}
-
-.button.danger:hover:not(:disabled) {
-  background: #852f21;
-}
-
 .error {
   margin: 12px 0 0;
   color: #9e2f22;
@@ -300,7 +320,6 @@ input[type="file"] {
   transition: width 160ms ease;
 }
 
-.transfer-stack,
 .download-stack {
   display: grid;
   gap: 12px;
@@ -391,16 +410,11 @@ input[type="file"] {
   }
 
   .topbar,
-  .status-row,
-  .room-code,
   .download-row,
-  .transfer-row {
+  .transfer-row,
+  .peer-row {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .join-form {
-    grid-template-columns: 1fr;
   }
 }
 

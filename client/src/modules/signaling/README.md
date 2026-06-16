@@ -8,7 +8,7 @@ Owns the WebSocket client connection to the cloud signaling server.
 
 ## Protocol Boundary
 
-This module should only manage transport connectivity. Room lifecycle events belong in `pairing`, WebRTC offer/answer handling belongs in `peer`, and file metadata belongs in `transfer`.
+This module should only manage transport connectivity. Peer discovery events belong in `pairing`, WebRTC offer/answer handling belongs in `peer`, and file metadata belongs in `transfer`.
 
 ## AI Context
 
