@@ -1,5 +1,10 @@
 node_modules
 .git
 .gitignore
-AGENTS.md
 .DS_Store
+*.md
+**/*.md
+.claude/
+scripts/
+client/dist/
+client/node_modules/

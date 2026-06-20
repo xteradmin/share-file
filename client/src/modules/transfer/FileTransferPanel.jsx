@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Download, FileCheck, Send, Square, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Download, FileCheck, Send, Square, RotateCcw, Keyboard } from "lucide-react";
 import {
   sendFile,
   createFileId,
@@ -23,15 +23,25 @@ export function FileTransferPanel({
 }) {
   const fileInputRef = useRef(null);
   const abortRef = useRef(null);
+  const dropZoneRef = useRef(null);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [sending, setSending] = useState(null);
   const [error, setError] = useState("");
   const [acceptingIncoming, setAcceptingIncoming] = useState(false);
   const [pendingTransfers, setPendingTransfers] = useState([]);
   const [resumeId, setResumeId] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
 
   const openChannels = getOpenChannels();
   const channelReady = openChannels.length > 0;
+
+  const onShareFileRef = useRef(onShareFile);
+  onShareFileRef.current = onShareFile;
+  const channelReadyRef = useRef(channelReady);
+  channelReadyRef.current = channelReady;
+  const sendingRef = useRef(sending);
+  sendingRef.current = sending;
 
   // Derive a collective channel state for the status badge
   const hasConnecting = Object.values(channelStates).some((s) => s === "connecting");
@@ -42,15 +52,7 @@ export function FileTransferPanel({
     setPendingTransfers(getPendingTransferStates());
   }, []);
 
-  // When the user picks a file and we were waiting for resume, start sending.
-  useEffect(() => {
-    if (selectedFiles.length > 0 && resumeId) {
-      startSendWithFile(selectedFiles[0], resumeId);
-      setResumeId(null);
-    }
-  }, [selectedFiles, resumeId]);
-
-  const startSendWithFile = async (file, pendingId) => {
+  const startSendWithFile = useCallback(async (file, pendingId) => {
     if (!file) {
       return;
     }
@@ -123,7 +125,15 @@ export function FileTransferPanel({
       abortRef.current = null;
       window.setTimeout(() => setSending(null), 900);
     }
-  };
+  }, [getOpenChannels]);
+
+  // When the user picks a file and we were waiting for resume, start sending.
+  useEffect(() => {
+    if (selectedFiles.length > 0 && resumeId) {
+      startSendWithFile(selectedFiles[0], resumeId);
+      setResumeId(null);
+    }
+  }, [selectedFiles, resumeId, startSendWithFile]);
 
   const startSend = async () => {
     if (selectedFiles.length === 0) {
@@ -214,19 +224,118 @@ export function FileTransferPanel({
     fileInputRef.current?.click();
   };
 
+  // Shared logic for adding files from any source (picker, drag-drop, paste)
+  // Uses refs so the callback is stable — avoids re-registering drop/paste handlers on every peer change.
+  const addFiles = useCallback(
+    (files) => {
+      if (files.length === 0) return;
+      files.forEach((f) => onShareFileRef.current?.(f));
+      if (channelReadyRef.current) {
+        setSelectedFiles((prev) => [...prev, ...files]);
+      }
+    },
+    [],
+  );
+
   const handleFileChange = (event) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
     if (files.length === 0) {
-      // User cancelled the file picker — clear resume state.
       setResumeId(null);
       return;
     }
-    setSelectedFiles(files);
-    // Register files into sharing catalog immediately so others can discover them
-    files.forEach((f) => onShareFile?.(f));
-    // Reset so the same file can be picked again.
+    addFiles(files);
     event.target.value = "";
   };
+
+  // ── Drag and drop ──────────────────────────────────────────────
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer?.types?.includes("Files")) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+
+      if (sendingRef.current) return;
+      const dropped = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
+      // Filter out directories (they appear with empty type and zero size)
+      const files = dropped.filter((f) => f.size > 0 || f.type !== "");
+      addFiles(files);
+    },
+    [addFiles],
+  );
+
+  // Reset drag state if the user drags outside the browser window (dragend fires on the source element)
+  useEffect(() => {
+    const handleDragEnd = () => {
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+    };
+    document.addEventListener("dragend", handleDragEnd);
+    return () => document.removeEventListener("dragend", handleDragEnd);
+  }, []);
+
+  // ── Clipboard paste (Ctrl+V / Cmd+V) ───────────────────────────
+  useEffect(() => {
+    const handlePaste = (e) => {
+      if (sendingRef.current) return;
+      // Ignore if user is typing in an input/textarea
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const files = [];
+      for (const item of items) {
+        if (item.kind === "file") {
+          const file = item.getAsFile();
+          if (file) {
+            // Pasted images often have no name; give them a default
+            if (!file.name || file.name === "image.png" || file.name === "image.jpg") {
+              const ext = file.type.split("/")[1] || "png";
+              const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+              const named = new File([file], `pasted-${timestamp}.${ext}`, { type: file.type });
+              files.push(named);
+            } else {
+              files.push(file);
+            }
+          }
+        }
+      }
+
+      if (files.length > 0) {
+        e.preventDefault();
+        addFiles(files);
+      }
+    };
+
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [addFiles]);
 
   const dismissPending = (id) => {
     clearTransferState(id);
@@ -326,58 +435,91 @@ export function FileTransferPanel({
         </div>
       ) : null}
 
-      <div className="file-picker">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          disabled={!channelReady || Boolean(sending)}
-          onChange={handleFileChange}
-        />
-        <div className="button-row">
-          <button
-            className="button"
-            type="button"
-            disabled={!channelReady || selectedFiles.length === 0 || Boolean(sending)}
-            onClick={startSend}
-          >
-            <Send size={17} aria-hidden="true" />
-            Send
-          </button>
-          <button
-            className="button secondary"
-            type="button"
-            disabled={!sending}
-            onClick={cancelSend}
-          >
-            <Square size={16} aria-hidden="true" />
-            Cancel
-          </button>
-        </div>
-
-        {selectedFiles.length > 0 && !sending && (
-          <div className="selected-files-list">
-            <div className="selected-files-header">
-              <h3>Files to send ({selectedFiles.length})</h3>
-              <button
-                type="button"
-                className="button-link"
-                onClick={() => setSelectedFiles([])}
-              >
-                Clear all
-              </button>
+      <div
+        ref={dropZoneRef}
+        className={`drop-zone${isDragging ? " drag-active" : ""}`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {!isDragging && (
+          <>
+            <div className="shortcut-badges">
+              <span className="shortcut-badge">
+                <Download size={13} aria-hidden="true" />
+                Drag & drop files here
+              </span>
+              <span className="shortcut-badge">
+                <Keyboard size={13} aria-hidden="true" />
+                <kbd>{(navigator.userAgent?.includes("Mac") || navigator.platform?.includes("Mac")) ? "\u2318" : "Ctrl"}</kbd>+<kbd>V</kbd> Paste
+              </span>
             </div>
-            <ul>
-              {selectedFiles.map((file, idx) => (
-                <li key={idx} className="selected-file-item">
-                  <span className="file-name">{file.name}</span>
-                  <span className="file-size">{formatBytes(file.size)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+
+            {!channelReady && (
+              <p className="file-picker-hint">
+                Files will be shared once other devices connect to the same network.
+              </p>
+            )}
+            {channelReady && (
+              <p className="file-picker-hint">
+                Files added here will be sent instantly to connected devices.
+              </p>
+            )}
+          </>
         )}
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        disabled={Boolean(sending)}
+        onChange={handleFileChange}
+      />
+      <div className="button-row">
+        <button
+          className="button"
+          type="button"
+          disabled={!channelReady || selectedFiles.length === 0 || Boolean(sending)}
+          onClick={startSend}
+        >
+          <Send size={17} aria-hidden="true" />
+          Send
+        </button>
+        <button
+          className="button secondary"
+          type="button"
+          disabled={!sending}
+          onClick={cancelSend}
+        >
+          <Square size={16} aria-hidden="true" />
+          Cancel
+        </button>
+      </div>
+
+      {selectedFiles.length > 0 && !sending && (
+        <div className="selected-files-list">
+          <div className="selected-files-header">
+            <h3>Files to send ({selectedFiles.length})</h3>
+            <button
+              type="button"
+              className="button-link"
+              onClick={() => setSelectedFiles([])}
+            >
+              Clear all
+            </button>
+          </div>
+          <ul>
+            {selectedFiles.map((file, idx) => (
+              <li key={idx} className="selected-file-item">
+                <span className="file-name">{file.name}</span>
+                <span className="file-size">{formatBytes(file.size)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {sending ? (
         <TransferProgress
@@ -498,6 +640,17 @@ export function FileTransferPanel({
       ) : null}
 
       {error ? <p className="error">{error}</p> : null}
+
+      {/* Full-screen drop overlay — rendered here so it covers the viewport */}
+      {isDragging && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-icon">
+            <Download size={36} aria-hidden="true" />
+          </div>
+          <span className="drop-overlay-text">Drop files to share</span>
+          <span className="drop-overlay-hint">Release to add files to your sharing catalog</span>
+        </div>
+      )}
     </section>
   );
 }

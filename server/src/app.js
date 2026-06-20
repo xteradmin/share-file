@@ -23,7 +23,27 @@ export function createApp() {
   registerHealthRoutes(app);
 
   if (fs.existsSync(clientDist)) {
-    app.use(express.static(clientDist));
+    // Vite's hashed assets (JS/CSS with content hashes) can be cached long-term.
+    app.use(
+      "/assets",
+      express.static(path.join(clientDist, "assets"), {
+        maxAge: "1y",
+        immutable: true,
+      }),
+    );
+
+    // index.html and other root files should never be cached.
+    app.use(
+      express.static(clientDist, {
+        maxAge: 0,
+        etag: true,
+        setHeaders(res, filePath) {
+          if (filePath.endsWith("index.html")) {
+            res.setHeader("Cache-Control", "no-cache");
+          }
+        },
+      }),
+    );
     app.get("*", (_request, response, next) => {
       if (_request.path.startsWith("/api") || _request.path.startsWith("/ws")) {
         next();

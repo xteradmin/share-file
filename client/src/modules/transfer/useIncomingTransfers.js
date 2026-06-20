@@ -198,7 +198,17 @@ export function useIncomingTransfers(onShareFile) {
 
           // Auto-accept if we have pre-created a sink for this requested file or are in Save All directory mode
           if (autoAcceptRef.current || preCreatedSinksRef.current.has(message.id)) {
-            performAccept(pending);
+            performAccept(pending).catch((err) => {
+              if (err.name !== "AbortError") {
+                setIncoming({
+                  meta: message,
+                  receivedBytes: 0,
+                  status: "failed",
+                  storageMode: canStreamToDisk() ? "disk" : "memory",
+                  error: err.message || "Could not accept incoming transfer.",
+                });
+              }
+            });
             return;
           }
 
@@ -219,6 +229,7 @@ export function useIncomingTransfers(onShareFile) {
         if (message.type === "file-cancel") {
           const active = activeRef.current;
           if (active?.id === message.id) {
+            active.cleanupChannelEvents?.();
             active.sink.abort?.();
             activeRef.current = null;
           }
@@ -250,10 +261,14 @@ export function useIncomingTransfers(onShareFile) {
       }
 
       active.receivedBytes += chunk.byteLength;
-      active.writeChain = active.writeChain.then(() => active.sink.write(chunk, position));
-      active.writeChain.catch(() => {
-        failActiveTransfer(active, "Could not write received data.");
-      });
+      active.writeChain = active.writeChain
+        .then(() => {
+          if (active.failed) return; // Skip write if transfer already failed
+          return active.sink.write(chunk, position);
+        })
+        .catch(() => {
+          failActiveTransfer(active, "Could not write received data.");
+        });
       partialTransfersRef.current.set(active.id, active);
 
       const now = performance.now();

@@ -5,6 +5,7 @@ import { handlePeerMessage } from "./modules/peers/peerHandlers.js";
 import { handleSignalMessage } from "./modules/signaling/signalingHandlers.js";
 
 const clients = new Map();
+const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
 
 function getLocalIpAddress() {
   const interfaces = os.networkInterfaces();
@@ -35,6 +36,20 @@ function getLocalIpAddress() {
 export function registerSocketGateway(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
+  // Heartbeat: detect dead connections and clean them up.
+  const heartbeatTimer = setInterval(() => {
+    for (const [id, client] of clients) {
+      if (client.isAlive === false) {
+        // Client did not respond to the previous ping — terminate.
+        client.ws.terminate();
+        clients.delete(id);
+        continue;
+      }
+      client.isAlive = false;
+      client.ws.ping();
+    }
+  }, HEARTBEAT_INTERVAL);
+
   wss.on("connection", (ws, request) => {
     const rawIp = request.headers["x-forwarded-for"]
       ? request.headers["x-forwarded-for"].split(",")[0].trim()
@@ -56,8 +71,17 @@ export function registerSocketGateway(httpServer) {
       ws,
       displayName: "LAN device",
       ip: clientIp,
+      isAlive: true,
     };
     clients.set(client.id, client);
+
+    ws.on("pong", () => {
+      client.isAlive = true;
+    });
+
+    ws.on("error", (err) => {
+      console.error(`[ws] Error for client ${client.id}:`, err.message);
+    });
 
     ws.on("message", (rawMessage) => {
       const message = parseMessage(rawMessage);
@@ -89,6 +113,19 @@ export function registerSocketGateway(httpServer) {
       broadcastPeerLists();
     });
   });
+
+  // Graceful shutdown: close all WebSocket connections and stop the heartbeat.
+  const shutdown = () => {
+    clearInterval(heartbeatTimer);
+    for (const client of clients.values()) {
+      client.ws.close(1001, "Server shutting down");
+    }
+    clients.clear();
+    wss.close();
+  };
+
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 function parseMessage(rawMessage) {
