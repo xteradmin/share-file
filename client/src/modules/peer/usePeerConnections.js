@@ -178,9 +178,9 @@ export function usePeerConnections({
       setChannelStates((prev) => ({ ...prev, [peerId]: "connecting" }));
 
       const count = retryCountsRef.current.get(peerId) || 0;
-      if (count < 3) {
+      if (count < 1) {
         retryCountsRef.current.set(peerId, count + 1);
-        onEvent?.(`Retrying connection with ${displayName} (attempt ${count + 1}/3) in 3 seconds...`);
+        onEvent?.(`Retrying connection with ${displayName} (attempt ${count + 1}/2)...`);
         setTimeout(() => {
           retryingRef.current.delete(peerId);
           // Check if peer is still online before retrying (use ref for latest list)
@@ -191,10 +191,10 @@ export function usePeerConnections({
               negotiateInitiator(newRecord, peerId, displayName);
             }
           }
-        }, 3000);
+        }, 1000);
       } else {
         retryingRef.current.delete(peerId);
-        onEvent?.(`Direct connection failed. Switching to server relay for ${displayName}...`);
+        onEvent?.(`WebRTC failed. Switching to server relay for ${displayName}...`);
         // Fall back to relay mode through the signaling server
         if (socket) {
           const relay = new RelayChannel(socket, peerId);
@@ -244,7 +244,7 @@ export function usePeerConnections({
           pc.close();
           triggerRetry(peerId, displayName, isInitiator);
         }
-      }, 20_000);
+      }, 8_000);
       record._connectTimer = connectTimer;
 
       pc.onconnectionstatechange = () => {
