@@ -8,7 +8,9 @@ Browser-based local file transfer via WebRTC DataChannels. A lightweight signali
 
 The current UI has two primary panels:
 - Users: shows the local random username/device name, visible LAN users, and connect/disconnect actions.
-- Transfer: shows file selection, incoming requests, progress, and completed downloads.
+- Transfer: shows file selection (picker, drag-and-drop, clipboard paste), incoming requests, progress, and completed downloads.
+
+Files can be staged before a peer connection is established; once a DataChannel opens, staged files are broadcast as a catalog to all connected peers.
 
 There are no room codes, activity timeline, or device/peer metrics rail.
 
@@ -22,6 +24,19 @@ npm run dev:server # server only
 npm run build      # builds client for production
 npm start          # runs signaling server (production)
 ```
+
+### Production Deployment
+
+```bash
+docker build -t share-file .
+docker run -p 3000:3000 share-file
+```
+
+The server includes:
+- **WebSocket heartbeat**: pings every 30s, disconnects clients that miss 2 pongs.
+- **Graceful shutdown**: closes WebSocket connections and HTTP server on SIGTERM/SIGINT.
+- **Cache headers**: static assets cached 1hr, HTML 30d.
+- **CORS**: configurable via `CLIENT_ORIGIN` env var; all origins allowed when unset.
 
 ## Architecture
 
@@ -54,6 +69,7 @@ server/                  Express + ws signaling server
 - **Control messages**: `file-meta`, `file-done`, `file-cancel`, `file-resume`.
 - **Data**: raw `ArrayBuffer` chunks over the same ordered DataChannel.
 - **Backpressure**: waits only when `bufferedAmount > 64MB`, using `bufferedamountlow` plus a 10ms poll fallback.
+- **Resume timeout**: 30s timeout on `waitForResumeOffset`; aborts if receiver never replies.
 - **Receiver**: waits for user acceptance, then streams to disk with the File System Access API when available; otherwise it falls back to a single in-memory buffer.
 
 ### Resume
@@ -76,6 +92,12 @@ The sender saves `{ name, size, mimeType, lastSentOffset }` to `localStorage` ev
 - The receiver waits for `signalingReady` before sending `peer:accept`; this keeps the initiator from sending an offer before the receiver can process it.
 - Transfer controls should stay disabled until the DataChannel state is `open`.
 
+### File Input Methods
+
+- **File picker button**: standard `<input type="file">` in the Transfer panel.
+- **Drag-and-drop**: full-screen overlay with bounce animation when files are dragged over the page. Directories are filtered out. `dragend` listener prevents stuck overlay state.
+- **Clipboard paste**: Ctrl+V / Cmd+V anywhere on the page (excluding input/textarea). Clipboard images get auto-generated names. Platform detection uses `navigator.userAgent` (not deprecated `navigator.platform`).
+
 ### LAN Access
 
 - Server binds `0.0.0.0:3000`.
@@ -94,3 +116,5 @@ Default allows any origin when no `CLIENT_ORIGIN` env is set. Production deploym
 - `peerConfig.js` has STUN only, so some networks cannot connect without adding TURN.
 - `bufferedAmountLowThreshold` is adjusted around transfer backpressure logic, not in `peerConfig.js`.
 - No tests or linting are configured.
+- `navigator.platform` is deprecated; use `navigator.userAgent?.includes("Mac")` for macOS detection.
+- `FileTransferPanel.jsx` uses stable refs (`onShareFileRef`, `channelReadyRef`, `sendingRef`) to keep the `addFiles` callback identity stable across renders.

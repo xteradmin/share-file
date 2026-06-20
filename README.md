@@ -5,12 +5,15 @@ Browser-based local file transfer using WebRTC DataChannels. The signaling serve
 ## What It Does
 
 - **Auto-Announce & Auto-Pairing**: Displays nearby LAN devices with random usernames/device names and establishes WebRTC connections automatically without room codes or manual clicking to connect.
+- **Drag-and-Drop & Clipboard Paste**: Drop files onto the page (full-screen overlay with bounce animation) or paste via Ctrl+V / Cmd+V anywhere. Directories are filtered; clipboard images are auto-named.
+- **Offline File Staging**: Stage files before a peer connection exists. Once connected, staged files are broadcast as a catalog to all peers.
 - **Decentralized LAN Shared Catalog**: Broadcasts staged and completed files to a local network library. Users can browse and request files shared by other connected devices.
 - **One-Click Direct Downloads**: Clicking "Download" next to any file in the network library opens the browser's save picker (or memory buffer) and begins downloading instantly, bypassing redundant "Accept" prompts.
 - **Centered Modal Overlay**: Pushed transfers (files sent directly to all users) appear in a premium centered modal overlay with a blurred background, locking focus and eliminating scrolling.
-- **Auto-Retry & Network Recovery**: Automatically schedules and runs WebRTC re-negotiations (up to 3 times) if a channel drops.Purges catalog files and active streams instantly if a peer goes offline or signaling drops.
+- **Auto-Retry & Network Recovery**: Automatically schedules and runs WebRTC re-negotiations (up to 3 times) if a channel drops. Purges catalog files and active streams instantly if a peer goes offline or signaling drops.
 - **Browser-Safe Streaming**: Writes incoming chunks directly to disk in supported browsers using the File System Access API. Automatically prompts and triggers browser downloads for memory fallbacks, with tab-crash warnings for large files.
-- **Sender-Side Resume**: Saves transfer progress offsets every 4MB to support resumption from where a transfer was interrupted.
+- **Sender-Side Resume**: Saves transfer progress offsets every 4MB to support resumption from where a transfer was interrupted. Resume handshake times out after 30s if the receiver never responds.
+- **Production Hardening**: WebSocket heartbeat (30s ping), graceful shutdown on SIGTERM/SIGINT, static asset cache headers, and configurable CORS via `CLIENT_ORIGIN`.
 
 ## Commands
 

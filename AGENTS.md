@@ -11,6 +11,10 @@ This is a WebRTC file transfer app with a monorepo layout:
 
 The app is designed for devices on the same LAN. Each browser receives a random username/device name, announces itself to the signaling server, and appears in the Users panel. There are no room codes. Clicking a user starts pairing, then WebRTC negotiation opens a direct DataChannel. The UI intentionally focuses on two panels only: Users and Transfer.
 
+**File input methods**: besides the file picker button, users can drag-and-drop files onto the Transfer panel (full-screen overlay with bounce animation) or paste files via Ctrl+V / Cmd+V anywhere on the page (excluding input/textarea fields). Directories are filtered out on drop. Clipboard images are auto-named.
+
+**Offline staging**: files can be staged before a peer connection is established. Once a DataChannel opens, staged files are broadcast as a catalog to all connected peers.
+
 ## File Transfer Protocol (`transferProtocol.js`)
 
 The sender sends 256KB `ArrayBuffer` chunks over a reliable WebRTC DataChannel. Control messages are JSON strings: `file-meta`, `file-done`, `file-cancel`, and `file-resume`.
@@ -21,9 +25,13 @@ The sender sends 256KB `ArrayBuffer` chunks over a reliable WebRTC DataChannel. 
 
 **Backpressure**: the sender waits only when `channel.bufferedAmount > 64MB`, using `bufferedamountlow` plus a 10ms polling fallback for throttled/background tabs.
 
+**Resume timeout**: `waitForResumeOffset` has a 30-second timeout. If the receiver never replies with `file-resume`, the send is aborted instead of hanging indefinitely.
+
 ## Receiver (`useIncomingTransfers.js`)
 
 `handleDataMessage(data, channel)` receives the channel as its second argument for the resume handshake. On `file-meta`, it creates a pending incoming request and waits for `acceptIncoming()`. When the File System Access API is available, accepted transfers stream chunks directly to the selected file via `FileSystemWritableFileStream.write()`. Unsupported browsers fall back to one in-memory `ArrayBuffer`, allocated only after acceptance. React state updates are throttled to every 150ms.
+
+On `file-cancel`, the receiver calls `cleanupChannelEvents()` and aborts the active sink to prevent event listener leaks and orphaned `.crswap` files. The auto-accept path (pre-created sinks, catalog downloads) wraps `performAccept` in `.catch()` to surface errors as failed status instead of unhandled rejections.
 
 ## Signaling Socket (`useSignalingSocket.js`)
 
@@ -43,3 +51,6 @@ The peer hook owns `RTCPeerConnection`, offer/answer exchange, ICE candidate rel
 - Server CORS allows all origins when no `CLIENT_ORIGIN` env is set.
 - No tests or linting are configured.
 - `CHUNK_SIZE` must stay at or below 256KB; larger messages can exceed WebRTC SCTP message limits.
+- `navigator.platform` is deprecated; use `navigator.userAgent?.includes("Mac")` for macOS detection.
+- The `addFiles` callback in `FileTransferPanel.jsx` uses refs (`onShareFileRef`, `channelReadyRef`, `sendingRef`) to stay stable across renders and avoid unnecessary re-renders of parent components.
+- `isDragging` state is reset by a document-level `dragend` listener so dragging files outside the browser window does not leave the overlay stuck.
