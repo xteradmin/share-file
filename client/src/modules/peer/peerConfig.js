@@ -4,7 +4,11 @@ const turnUrl = import.meta.env.VITE_TURN_URL;
 const turnUser = import.meta.env.VITE_TURN_USER;
 const turnPass = import.meta.env.VITE_TURN_PASS;
 
-const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+const iceServers = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+];
 
 if (turnUrl) {
   iceServers.push({

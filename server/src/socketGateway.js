@@ -3,6 +3,7 @@ import os from "node:os";
 import { WebSocket, WebSocketServer } from "ws";
 import { handlePeerMessage } from "./modules/peers/peerHandlers.js";
 import { handleSignalMessage } from "./modules/signaling/signalingHandlers.js";
+import { handleRelayMessage, cleanupRelayForClient } from "./modules/relay/relayHandlers.js";
 
 const clients = new Map();
 const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
@@ -105,10 +106,17 @@ export function registerSocketGateway(httpServer) {
 
       if (message.event.startsWith("signal:")) {
         handleSignalMessage(context, message.event, message.payload);
+        return;
+      }
+
+      if (message.event.startsWith("relay:")) {
+        handleRelayMessage(context, message.event, message.payload);
+        return;
       }
     });
 
     ws.on("close", () => {
+      cleanupRelayForClient(client.id, clients, sendEvent);
       clients.delete(client.id);
       broadcastPeerLists();
     });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DATA_CHANNEL_LABEL, peerConnectionConfig } from "./peerConfig.js";
 import { sendFile } from "../transfer/transferProtocol.js";
+import { RelayChannel } from "./RelayChannel.js";
 
 export function usePeerConnections({
   socket,
@@ -192,11 +193,29 @@ export function usePeerConnections({
         }, 3000);
       } else {
         retryingRef.current.delete(peerId);
-        onEvent?.(`WebRTC connection failed after 3 retries with ${displayName}.`);
-        setChannelStates((prev) => ({ ...prev, [peerId]: "failed" }));
+        onEvent?.(`Direct connection failed. Switching to server relay for ${displayName}...`);
+        // Fall back to relay mode through the signaling server
+        if (socket) {
+          const relay = new RelayChannel(socket, peerId);
+          const relayRecord = {
+            pc: { close() {}, connectionState: "connected", iceConnectionState: "connected" },
+            channel: relay,
+            pendingCandidates: [],
+            isInitiator: isInitiator,
+            displayName,
+            isRelay: true,
+          };
+          connectionsRef.current.set(peerId, relayRecord);
+          configureChannel(peerId, displayName, relay);
+          if (isInitiator) {
+            socket.emit("relay:open", { targetId: peerId });
+          }
+        } else {
+          setChannelStates((prev) => ({ ...prev, [peerId]: "failed" }));
+        }
       }
     },
-    [removePeerFiles, onEvent, negotiateInitiator]
+    [removePeerFiles, onEvent, negotiateInitiator, socket, configureChannel]
   );
 
   const setupPeerConnection = useCallback(
@@ -362,6 +381,9 @@ export function usePeerConnections({
         record = setupPeerConnection(from, displayName, false);
       }
 
+      // Skip signaling for relay connections (no real RTCPeerConnection)
+      if (record.isRelay) return;
+
       const pc = record.pc;
 
       // Rewrite .local hostnames in SDP and candidates if senderIp is available
@@ -425,6 +447,43 @@ export function usePeerConnections({
       socket.off("signal:receive", handleSignal);
     };
   }, [socket, selfPeer, availablePeers, setupPeerConnection, onEvent]);
+
+  // Handle incoming relay requests from peers whose WebRTC also failed
+  useEffect(() => {
+    if (!socket || !selfPeer) return;
+
+    const handleRelayOpen = ({ from }) => {
+      // Skip if we already have a working connection to this peer
+      const existing = connectionsRef.current.get(from);
+      if (existing?.channel?.readyState === "open") return;
+
+      const peerInfo = availablePeers.find((p) => p.id === from);
+      const displayName = peerInfo?.displayName || "LAN device";
+
+      onEvent?.(`Accepting relay connection from ${displayName}...`);
+      socket.emit("relay:accept", { targetId: from });
+
+      // Create relay channel if we don't have one yet
+      if (!existing || existing.closed || !existing.isRelay) {
+        const relay = new RelayChannel(socket, from);
+        const relayRecord = {
+          pc: { close() {}, connectionState: "connected", iceConnectionState: "connected" },
+          channel: relay,
+          pendingCandidates: [],
+          isInitiator: false,
+          displayName,
+          isRelay: true,
+        };
+        connectionsRef.current.set(from, relayRecord);
+        configureChannel(from, displayName, relay);
+      }
+    };
+
+    socket.on("relay:open", handleRelayOpen);
+    return () => {
+      socket.off("relay:open", handleRelayOpen);
+    };
+  }, [socket, selfPeer, availablePeers, configureChannel, onEvent]);
 
   // Clean up all connections on unmount
   useEffect(() => {

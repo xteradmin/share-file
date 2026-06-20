@@ -43,6 +43,14 @@ The client uses a small custom WebSocket wrapper, not socket.io. Message format 
 
 The peer hook owns `RTCPeerConnection`, offer/answer exchange, ICE candidate relay, and DataChannel setup. It exposes `signalingReady` after the `signal:receive` listener is registered. The receiving side should send `peer:accept` only after `signalingReady` is true, otherwise the initiator can send an offer before the receiver is listening. The hook also guards stale StrictMode cleanup paths so closed effects do not keep sending signals or updating state.
 
+## WebSocket Relay Fallback (`RelayChannel.js`)
+
+When WebRTC P2P connection fails after 3 retries (common on VPS deployments where devices are on different networks), the system automatically falls back to relaying data through the signaling WebSocket server. `RelayChannel` is a drop-in replacement for `RTCDataChannel` — it implements the same API (`.send()`, `.close()`, `.readyState`, `.onmessage`, `.addEventListener()`/`.removeEventListener()`, etc.) so the transfer protocol works unchanged. Binary data is base64-encoded for JSON transport through the WebSocket relay, which adds ~33% overhead but ensures connectivity when P2P is impossible.
+
+**Server relay protocol** (`relay:open` → `relay:accept` → `relay:ready` → `relay:data` → `relay:close`) is handled by `relayHandlers.js`. The server maintains a `relayPairs` map and forwards data between matched peers. Cleanup happens automatically on WebSocket disconnect.
+
+**Initiator role** for relay follows the same deterministic assignment as WebRTC: `selfPeer.id < peerId`. The signal handler skips relay records (`record.isRelay`) to avoid calling WebRTC methods on the fake PC stub.
+
 ## Gotchas
 
 - `onDataMessage` in `usePeerConnection.js` passes `(event.data, nextChannel)`; both args are required.
@@ -55,3 +63,4 @@ The peer hook owns `RTCPeerConnection`, offer/answer exchange, ICE candidate rel
 - The `addFiles` callback in `FileTransferPanel.jsx` uses refs (`onShareFileRef`, `channelReadyRef`, `sendingRef`, `sendFilesNowRef`) to stay stable across renders and avoid unnecessary re-renders of parent components.
 - `isDragging` state is reset by a document-level `dragend` listener so dragging files outside the browser window does not leave the overlay stuck.
 - `peerConfig.js` reads TURN server config from `VITE_TURN_URL`, `VITE_TURN_USER`, `VITE_TURN_PASS` env vars (baked at build time by Vite). The Dockerfile accepts these as build args. See `.env.example`.
+- Relay records use a fake PC stub (`{ close() {} }`) with `isRelay: true`. The signaling handler skips these records. All cleanup code is compatible because the stub has a no-op `close()`.

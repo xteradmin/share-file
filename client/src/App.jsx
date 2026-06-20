@@ -48,14 +48,16 @@ export function App() {
   } = useIncomingTransfers(shareFile);
 
   const handlePeerEvent = useCallback((message) => {
+    // Relay fallback messages are informational, don't show as errors
+    if (/switching to server relay|accepting relay/i.test(message)) {
+      return;
+    }
     if (/failed|error/i.test(message)) {
-      if (/failed/i.test(message)) {
-        setPeerError(
-          "Connection failed. If you are using a mobile hotspot, direct peer-to-peer connections are often blocked by the mobile OS. Please connect both devices to the same Wi-Fi router."
-        );
-      } else {
-        setPeerError(message);
-      }
+      setPeerError(message);
+    }
+    // Clear error on successful connection
+    if (/channel opened/i.test(message)) {
+      setPeerError("");
     }
   }, []);
 
