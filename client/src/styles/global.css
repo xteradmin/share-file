@@ -181,9 +181,124 @@ h2 {
   gap: 12px;
 }
 
-.file-picker {
-  display: grid;
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 10px;
+  min-height: 110px;
+  position: relative;
+  transition: border-color 200ms ease, background 200ms ease, box-shadow 200ms ease;
+  border: 2px dashed #b8c9be;
+  border-radius: 14px;
+  padding: 20px 16px;
+  background: #fafcf8;
+  margin-top: 12px;
+  margin-bottom: 16px;
+}
+
+.drop-zone:hover {
+  border-color: #8aab96;
+  background: #f4f9f5;
+}
+
+.drop-zone.drag-active {
+  border-color: #16834f;
+  background: #ecfdf5;
+  box-shadow: 0 0 0 4px rgba(22, 131, 79, 0.12);
+}
+
+/* Full-screen drag overlay */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(236, 253, 245, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  animation: drop-fade-in 0.18s ease-out;
+}
+
+.drop-overlay-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #16834f;
+  color: #fff;
+  animation: drop-bounce 0.6s ease infinite alternate;
+}
+
+.drop-overlay-text {
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: #065f46;
+}
+
+.drop-overlay-hint {
+  font-size: 0.85rem;
+  color: #4b7a62;
+}
+
+@keyframes drop-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes drop-bounce {
+  from { transform: translateY(0); }
+  to { transform: translateY(-8px); }
+}
+
+/* Shortcut badges row */
+.shortcut-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.shortcut-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4c5a50;
+  background: #edf2ea;
+  border: 1px solid #d2ddce;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.shortcut-badge kbd {
+  display: inline-block;
+  padding: 2px 5px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1b5f46;
+  background: #fff;
+  border: 1px solid #c4d4c8;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 #c4d4c8;
+}
+
+.file-picker-hint {
+  margin: 0;
+  color: #647268;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 input[type="file"] {
@@ -195,6 +310,7 @@ input[type="file"] {
   border: 1px solid #cbd5ca;
   border-radius: 8px;
   cursor: pointer;
+  margin-bottom: 12px;
 }
 
 .button-row {

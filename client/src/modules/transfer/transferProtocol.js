@@ -132,6 +132,8 @@ function waitForDrain(channel) {
 }
 
 // ── Resume offset handshake ──────────────────────────────────────────
+const RESUME_TIMEOUT_MS = 30_000; // 30 seconds — abort if receiver never responds
+
 function waitForResumeOffset(channel, id, fileSize, signal) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -141,6 +143,7 @@ function waitForResumeOffset(channel, id, fileSize, signal) {
       channel.removeEventListener("close", handleClose);
       channel.removeEventListener("error", handleError);
       signal?.removeEventListener("abort", handleAbort);
+      clearTimeout(timer);
     };
 
     const finish = (offset = 0) => {
@@ -186,6 +189,11 @@ function waitForResumeOffset(channel, id, fileSize, signal) {
       fail(new Error("Transfer cancelled."));
       return;
     }
+
+    // Timeout: if the receiver never sends a resume offset, don't hang forever
+    const timer = setTimeout(() => {
+      fail(new Error("Timed out waiting for receiver response."));
+    }, RESUME_TIMEOUT_MS);
 
     channel.addEventListener("message", handler);
     channel.addEventListener("close", handleClose);

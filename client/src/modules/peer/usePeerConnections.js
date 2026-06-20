@@ -14,6 +14,11 @@ export function usePeerConnections({
   const connectionsRef = useRef(new Map());
   const retryCountsRef = useRef(new Map());
   const retryingRef = useRef(new Set());
+  const setupPeerConnectionRef = useRef(null);
+  const sharedFilesRef = useRef(sharedFiles);
+  sharedFilesRef.current = sharedFiles;
+  const availablePeersRef = useRef(availablePeers);
+  availablePeersRef.current = availablePeers;
   const [channelStates, setChannelStates] = useState({});
   const [networkFiles, setNetworkFiles] = useState(new Map());
 
@@ -48,11 +53,11 @@ export function usePeerConnections({
         retryCountsRef.current.set(peerId, 0); // Reset retry count on successful open
         onEvent?.(`Data channel opened with ${displayName}.`);
 
-        // Send catalog immediately upon opening
+        // Send catalog immediately upon opening (use ref to get latest sharedFiles)
         try {
           const catalogMsg = JSON.stringify({
             type: "catalog-share",
-            files: Array.from(sharedFiles.values()).map((f) => ({
+            files: Array.from(sharedFilesRef.current.values()).map((f) => ({
               id: f.id,
               name: f.name,
               size: f.size,
@@ -103,7 +108,7 @@ export function usePeerConnections({
             }
 
             if (message.type === "file-request") {
-              const fileRecord = sharedFiles.get(message.id);
+              const fileRecord = sharedFilesRef.current.get(message.id);
               if (fileRecord) {
                 onEvent?.(`Auto-sending requested file "${fileRecord.name}" to ${displayName}...`);
                 sendFile({
@@ -126,7 +131,7 @@ export function usePeerConnections({
         onDataMessage?.(event.data, nextChannel, peerId);
       };
     },
-    [onDataMessage, onEvent, sharedFiles, removePeerFiles]
+    [onDataMessage, onEvent, removePeerFiles]
   );
 
   const negotiateInitiator = useCallback(
@@ -162,6 +167,7 @@ export function usePeerConnections({
       if (record) {
         record.channel?.close();
         record.pc.close();
+        record.closed = true; // Prevent duplicate retry from simultaneous state changes
         connectionsRef.current.delete(peerId);
         removePeerFiles(peerId);
         onPeerDisconnect?.(peerId);
@@ -175,10 +181,10 @@ export function usePeerConnections({
         onEvent?.(`Retrying connection with ${displayName} (attempt ${count + 1}/3) in 3 seconds...`);
         setTimeout(() => {
           retryingRef.current.delete(peerId);
-          // Check if peer is still online before retrying
-          const isPeerOnline = availablePeers.some((p) => p.id === peerId);
-          if (isPeerOnline) {
-            const newRecord = setupPeerConnection(peerId, displayName, isInitiator);
+          // Check if peer is still online before retrying (use ref for latest list)
+          const isPeerOnline = availablePeersRef.current.some((p) => p.id === peerId);
+          if (isPeerOnline && setupPeerConnectionRef.current) {
+            const newRecord = setupPeerConnectionRef.current(peerId, displayName, isInitiator);
             if (isInitiator) {
               negotiateInitiator(newRecord, peerId, displayName);
             }
@@ -190,7 +196,7 @@ export function usePeerConnections({
         setChannelStates((prev) => ({ ...prev, [peerId]: "failed" }));
       }
     },
-    [availablePeers, removePeerFiles, onEvent, negotiateInitiator]
+    [removePeerFiles, onEvent, negotiateInitiator]
   );
 
   const setupPeerConnection = useCallback(
@@ -215,14 +221,16 @@ export function usePeerConnections({
           [peerId]: state === "connected" && record.channel?.readyState === "open" ? "open" : state,
         }));
 
-        if (state === "failed" || state === "disconnected") {
+        if ((state === "failed" || state === "disconnected") && !record.closed) {
+          record.closed = true;
           triggerRetry(peerId, displayName, isInitiator);
         }
       };
 
       pc.oniceconnectionstatechange = () => {
         const state = pc.iceConnectionState;
-        if (state === "failed") {
+        if (state === "failed" && !record.closed) {
+          record.closed = true;
           triggerRetry(peerId, displayName, isInitiator);
         }
       };
@@ -253,6 +261,8 @@ export function usePeerConnections({
     },
     [socket, configureChannel, triggerRetry]
   );
+
+  setupPeerConnectionRef.current = setupPeerConnection;
 
   // Broadcast catalog changes dynamically to all open peers
   useEffect(() => {

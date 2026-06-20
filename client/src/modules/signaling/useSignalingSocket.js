@@ -69,7 +69,12 @@ function createSignalingClient(baseUrl) {
     emitLocal("disconnect");
   });
   ws.addEventListener("message", (event) => {
-    const message = JSON.parse(event.data);
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch {
+      return; // Ignore malformed messages from the server
+    }
 
     if (message.requestId && pendingReplies.has(message.requestId)) {
       pendingReplies.get(message.requestId)(message.payload);
@@ -103,7 +108,15 @@ function createSignalingClient(baseUrl) {
     }
 
     const write = () => {
+      ws.removeEventListener("close", cancelWrite);
       ws.send(JSON.stringify({ event, payload, requestId }));
+    };
+
+    const cancelWrite = () => {
+      ws.removeEventListener("open", write);
+      if (requestId) {
+        pendingReplies.delete(requestId);
+      }
     };
 
     if (ws.readyState === WebSocket.OPEN) {
@@ -111,7 +124,13 @@ function createSignalingClient(baseUrl) {
       return;
     }
 
+    if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      cancelWrite();
+      return;
+    }
+
     ws.addEventListener("open", write, { once: true });
+    ws.addEventListener("close", cancelWrite, { once: true });
   }
 
   return {

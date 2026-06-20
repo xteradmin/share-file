@@ -94,14 +94,26 @@ export function App() {
       return undefined;
     }
 
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      setPeerError("Could not reach signaling server. Retrying...");
+    }, 5000);
+
     socket.emit("peer:announce", { displayName: deviceName }, (response) => {
+      clearTimeout(timeout);
+      if (timedOut) return;
       if (!response?.ok) {
         setPeerError(response?.error || "Could not join LAN user list.");
         return;
       }
-
+      setPeerError("");
       setSelfPeer(response.peer);
     });
+
+    return () => {
+      clearTimeout(timeout);
+    };
   }, [deviceName, signalingConnected, socket]);
 
   useEffect(() => {
